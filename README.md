@@ -25,19 +25,20 @@ ESP32 → REST API → Backend → Web Dashboard
 2. Run backend server
 3. Open dashboard in browser
 
-Repository Structure
+## 📁 Repository Structure
+
 Local_Weather_Monitoring_System-IOT/
 │
 ├── README.md
 │
 ├── firmware/
-│   └── esp32_weather.ino
+│ └── esp32_weather.ino
 │
 ├── web/
-│   ├── index.html
-│   ├── style.css
-│   └── script.js
+│ ├── index.html
+│ ├── style.css
+│ └── script.js
 │
 └── docs/
-    ├── wiring.png
-    └── dashboard.png
+├── wiring.png
+└── dashboard.png

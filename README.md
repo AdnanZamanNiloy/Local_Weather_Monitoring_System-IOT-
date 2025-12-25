@@ -1,73 +1,55 @@
-\# 🌤️ Local Weather Monitoring System
+# 🌤️ Local Weather Monitoring System
 
-An IoT-based weather monitoring system using ESP32,
+An IoT-based weather monitoring system using **ESP32**,  
+**BME280**, **DHT11**, **LDR**, and **Rain Sensor** with a web dashboard.
 
-BME280, DHT11, LDR, and Rain Sensor with a web dashboard.
+---
 
-\## Features
+## ✨ Features
+- 🌡️ Temperature & Humidity  
+- 🌬️ Atmospheric Pressure  
+- 🌧️ Rain Detection  
+- 💡 Light Intensity  
+- 📊 Real-time Web Dashboard  
 
-\- Temperature & Humidity
+---
 
-\- Atmospheric Pressure
+## 🧰 Hardware Used
+- ESP32 DevKit V1  
+- BME280  
+- DHT11  
+- LDR Module  
+- Rain Sensor  
 
-\- Rain Detection
+---
 
-\- Light Intensity
+## 🏗️ Architecture
+**ESP32 → REST API → Backend → Web Dashboard**
 
-\- Real-time Web Dashboard
+---
 
-\## Hardware Used
+## 🚀 Getting Started
+1. Flash ESP32 firmware  
+2. Run backend server  
+3. Open dashboard in browser  
 
-\- ESP32 DevKit V1
+---
 
-\- BME280
+## 📁 Repository Structure
 
-\- DHT11
-
-\- LDR Module
-
-\- Rain Sensor
-
-\## Architecture
-
-ESP32 → REST API → Backend → Web Dashboard
-
-\## Getting Started
-
-1\. Flash ESP32 firmware
-
-2\. Run backend server
-
-3\. Open dashboard in browser
-
-\## 📁 Repository Structure
-
-Local\_Weather\_Monitoring\_System-IOT/
-
+```text
+Local_Weather_Monitoring_System-IOT/
 │
-
 ├── README.md
-
 │
-
 ├── firmware/
-
-│ └── esp32\_weather.ino
-
+│   └── esp32_weather.ino
 │
-
 ├── web/
-
-│ ├── index.html
-
-│ ├── style.css
-
-│ └── script.js
-
+│   ├── index.html
+│   ├── style.css
+│   └── script.js
 │
-
 └── docs/
-
-├── wiring.png
-
-└── dashboard.png
+    ├── wiring.png
+    └── dashboard.png

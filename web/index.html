@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Monitoring System</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1><i class="fas fa-cloud-sun"></i> Weather Monitor</h1>
+            <p class="subtitle">Real-time IoT Weather Monitoring System</p>
+        </header>
+
+        <!-- Current Weather Section -->
+        <section id="current-weather" class="card">
+            <h2>Current Weather</h2>
+            <div id="loading" class="loading">
+                <i class="fas fa-spinner fa-spin"></i> Loading data...
+            </div>
+
+            <div id="weather-grid" class="weather-grid" style="display: none;">
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-thermometer-half"></i></div>
+                    <div class="weather-label">Temperature</div>
+                    <div class="weather-value" id="temperature">--°C</div>
+                    <div class="weather-sub" id="feels-like">Feels like: --°C</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-tint"></i></div>
+                    <div class="weather-label">Humidity</div>
+                    <div class="weather-value" id="humidity">--%</div>
+                    <div class="weather-sub" id="humidity-status">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-sun"></i></div>
+                    <div class="weather-label">Light</div>
+                    <div class="weather-value" id="light">--</div>
+                    <div class="weather-sub" id="light-status">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-compress-arrows-alt"></i></div>
+                    <div class="weather-label">Pressure</div>
+                    <div class="weather-value" id="pressure">-- hPa</div>
+                    <div class="weather-sub" id="pressure-status">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-cloud-rain"></i></div>
+                    <div class="weather-label">Rain</div>
+                    <div class="weather-value" id="rain">--%</div>
+                    <div class="weather-sub" id="rain-status">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-clock"></i></div>
+                    <div class="weather-label">Last Update</div>
+                    <div class="weather-value small" id="timestamp">--</div>
+                    <div class="weather-sub" id="time-ago">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-droplet"></i></div>
+                    <div class="weather-label">Dew Point</div>
+                    <div class="weather-value" id="dew-point">--°C</div>
+                    <div class="weather-sub" id="dew-point-status">--</div>
+                </div>
+
+                <div class="weather-item">
+                    <div class="weather-icon"><i class="fas fa-glass-water"></i></div>
+                    <div class="weather-label">Hydration</div>
+                    <div class="weather-value small" id="drink-amount">--</div>
+                    <div class="weather-sub" id="drink-suggestion">--</div>
+                </div>
+            </div>
+
+            <div id="last-updated" class="last-updated"></div>
+        </section>
+
+        <!-- Heat Alarm & Weather Evaluation -->
+        <section class="card" id="alerts-section" style="display: none;">
+            <h2><i class="fas fa-exclamation-triangle"></i> Active Alerts</h2>
+            <div id="heat-alarm" class="alert-box"></div>
+        </section>
+
+        <!-- Weather Evaluation -->
+        <section class="card">
+            <h2><i class="fas fa-clipboard-check"></i> Weather Evaluation</h2>
+            <div id="weather-evaluation" class="evaluation-grid">
+                <div class="eval-item">
+                    <div class="eval-icon"><i class="fas fa-thermometer-half"></i></div>
+                    <div class="eval-label">Temperature</div>
+                    <div class="eval-rating" id="temp-rating">
+                        <span class="stars">★★★★★</span>
+                    </div>
+                    <div class="eval-text" id="temp-eval">--</div>
+                </div>
+                <div class="eval-item">
+                    <div class="eval-icon"><i class="fas fa-tint"></i></div>
+                    <div class="eval-label">Humidity</div>
+                    <div class="eval-rating" id="humidity-rating">
+                        <span class="stars">★★★★★</span>
+                    </div>
+                    <div class="eval-text" id="humidity-eval">--</div>
+                </div>
+                <div class="eval-item">
+                    <div class="eval-icon"><i class="fas fa-wind"></i></div>
+                    <div class="eval-label">Air Quality</div>
+                    <div class="eval-rating" id="air-rating">
+                        <span class="stars">★★★★★</span>
+                    </div>
+                    <div class="eval-text" id="air-eval">--</div>
+                </div>
+                <div class="eval-item">
+                    <div class="eval-icon"><i class="fas fa-heart"></i></div>
+                    <div class="eval-label">Overall Comfort</div>
+                    <div class="eval-rating" id="overall-rating">
+                        <span class="stars">★★★★★</span>
+                    </div>
+                    <div class="eval-text" id="overall-eval">--</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Humidity Recommendation -->
+        <section class="card">
+            <h2><i class="fas fa-humidity"></i> Humidity Control Recommendation</h2>
+            <div id="humidity-recommendation" class="recommendation-box">
+                <p class="placeholder">Loading recommendations...</p>
+            </div>
+        </section>
+
+        <!-- Health Suggestions -->
+        <section id="health-suggestions" class="card">
+            <h2><i class="fas fa-heartbeat"></i> Health & Safety Suggestions</h2>
+            <div id="suggestions-content" class="suggestions-content">
+                <p class="placeholder">Loading suggestions...</p>
+            </div>
+        </section>
+
+        <!-- Historical Data Controls -->
+        <section class="card">
+            <h2><i class="fas fa-chart-line"></i> Historical Data</h2>
+            <div class="controls">
+                <button class="btn btn-primary active" type="button" onclick="loadChart('hourly', 24, this)">
+                    <i class="fas fa-clock"></i> Last 24 Hours
+                </button>
+                <button class="btn btn-primary" type="button" onclick="loadChart('hourly', 48, this)">
+                    <i class="fas fa-calendar-day"></i> 48 Hours
+                </button>
+                <button class="btn btn-primary" type="button" onclick="loadChart('daily', 7, this)">
+                    <i class="fas fa-calendar-week"></i> 7 Days
+                </button>
+                <button class="btn btn-primary" type="button" onclick="loadChart('daily', 30, this)">
+                    <i class="fas fa-calendar-alt"></i> 30 Days
+                </button>
+            </div>
+        </section>
+
+        <!-- Charts Section -->
+        <section class="card">
+            <h3><i class="fas fa-temperature-high"></i> Temperature & Humidity</h3>
+            <div class="chart-container">
+                <canvas id="tempHumidityChart"></canvas>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3><i class="fas fa-gauge-high"></i> Pressure & Light</h3>
+            <div class="chart-container">
+                <canvas id="pressureLightChart"></canvas>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3><i class="fas fa-cloud-showers-heavy"></i> Rain Detection</h3>
+            <div class="chart-container">
+                <canvas id="rainChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer>
+            <p><i class="fas fa-microchip"></i> IoT Weather Monitoring System</p>
+            <p class="stats-info">
+                <span id="total-readings">Total readings: --</span> |
+                <span id="device-status">Device: --</span>
+            </p>
+            <p class="stats-info" style="margin-top: 12px; font-size: 0.8em;">ESP32 + PHP + MySQL | 2026</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

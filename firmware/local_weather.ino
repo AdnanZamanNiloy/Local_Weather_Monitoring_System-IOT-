@@ -1,6 +1,8 @@
 #include "DHT.h"
 #include <Adafruit_BMP280.h>
 #include <Adafruit_Sensor.h>
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -11,245 +13,271 @@
 #define DHTPIN 5
 #define DHTTYPE DHT11
 #define RAIN_PIN 25
-#define LDR_PIN 34   // Analog pin (Voltage Divider)
+#define LDR_PIN 34
+
+// ================= SERVER CONFIG =================
+const char* serverDomain = "weathermonitor.work.gd";
+const char* submitEndpoint = "https://weathermonitor.work.gd/api/submit_data.php";
+const char* fetchEndpoint = "https://weathermonitor.work.gd/api/get_data.php?mode=current";
 
 // ================= OBJECTS =================
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 Adafruit_BMP280 bmp;
 DHT dht(DHTPIN, DHTTYPE);
-WiFiServer server(80);
 
 // ================= WIFI =================
 const char* ssid = "MM-227";
 const char* password = "Galib@cse";
 
 // ================= VARIABLES =================
-float temperature, pressure, altitude;
+float temperature, pressure;
 float humidity;
-float feelsLike, dewPoint;
-
 int rainStatus;
 int ldrValue;
 int lightPercent;
 
-String heatStatus, weatherStatus, drinkTip, lightStatus;
-bool humidifierState;
+unsigned long lastSensorRead = 0;
+unsigned long lastServerPost = 0;
+unsigned long sensorInterval = 2000; // Read sensors every 2 seconds
+unsigned long serverInterval = 30000; // Post to server every 30 seconds
 
-unsigned long lastTime = 0;
-unsigned long timerDelay = 2000;
 int lcdPage = 0;
+bool dataPostedSuccessfully = false;
 
 // ================= FUNCTIONS =================
-float calculateFeelsLike(float T, float H) {
-  return -8.784695 +
-         1.61139411 * T +
-         2.338549 * H -
-         0.14611605 * T * H -
-         0.01230809 * T * T -
-         0.01642482 * H * H +
-         0.00221173 * T * T * H +
-         0.00072546 * T * H * H -
-         0.00000358 * T * T * H * H;
+void readSensors()
+{
+    temperature = bmp.readTemperature();
+    pressure = bmp.readPressure() / 100.0F;
+
+    humidity = dht.readHumidity();
+    if (isnan(humidity))
+        humidity = 0;
+
+    rainStatus = digitalRead(RAIN_PIN);
+
+    // LDR Reading (0-4095 -> 0-100%)
+    ldrValue = analogRead(LDR_PIN);
+    lightPercent = 100 - (ldrValue * 100) / 4095;
+
+    Serial.println("Sensors Read:");
+    Serial.printf("  Temp: %.1f°C | Humidity: %.1f%% | Pressure: %.1f hPa\n",
+        temperature, humidity, pressure);
+    Serial.printf("  Light: %d%% | Rain: %s\n",
+        lightPercent, (rainStatus == LOW ? "YES" : "NO"));
 }
 
-String heatAlarm(float feelsLike) {
-  if (feelsLike >= 45) return "DANGER";
-  if (feelsLike >= 40) return "ALERT";
-  if (feelsLike >= 35) return "CAUTION";
-  return "NORMAL";
+bool postDataToServer()
+{
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi not connected!");
+        return false;
+    }
+
+    HTTPClient http;
+    http.begin(submitEndpoint);
+    http.addHeader("Content-Type", "application/json");
+
+    // Create JSON payload
+    StaticJsonDocument<256> doc;
+    doc["temperature"] = temperature;
+    doc["humidity"] = humidity;
+    doc["light"] = lightPercent;
+    doc["pressure"] = pressure;
+    doc["rain"] = (rainStatus == LOW ? 100 : 0); // 100 = raining, 0 = no rain
+    doc["device_id"] = "ESP32-01";
+
+    String jsonData;
+    serializeJson(doc, jsonData);
+
+    Serial.println("Posting to server...");
+    Serial.println(jsonData);
+
+    int httpResponseCode = http.POST(jsonData);
+
+    if (httpResponseCode > 0) {
+        String response = http.getString();
+        Serial.printf("Response Code: %d\n", httpResponseCode);
+        Serial.println("Response: " + response);
+        http.end();
+        return (httpResponseCode == 201 || httpResponseCode == 200);
+    } else {
+        Serial.printf("Error: %s\n", http.errorToString(httpResponseCode).c_str());
+        http.end();
+        return false;
+    }
 }
 
-float calculateDewPoint(float T, float H) {
-  return T - ((100 - H) / 5.0);
+void fetchDataFromServer()
+{
+    if (WiFi.status() != WL_CONNECTED) {
+        return;
+    }
+
+    HTTPClient http;
+    http.begin(fetchEndpoint);
+
+    int httpResponseCode = http.GET();
+
+    if (httpResponseCode == 200) {
+        String response = http.getString();
+
+        // Parse JSON response (optional - for display purposes)
+        StaticJsonDocument<512> doc;
+        DeserializationError error = deserializeJson(doc, response);
+
+        if (!error && doc["success"]) {
+            Serial.println("Latest data from server:");
+            Serial.printf("  Temp: %.1f°C | Humidity: %.1f%%\n",
+                doc["data"]["temperature"].as<float>(),
+                doc["data"]["humidity"].as<float>());
+        }
+    }
+
+    http.end();
 }
 
-String weatherEvaluation(float T, int rain) {
-  if (rain == LOW) return "RAINY";
-  if (T > 32) return "HOT";
-  if (T < 18) return "COLD";
-  return "PLEASANT";
-}
+void updateLCD()
+{
+    lcd.clear();
 
-bool humidityON(float H) {
-  return (H < 35);
-}
+    if (lcdPage == 0) {
+        lcd.setCursor(0, 0);
+        lcd.print("T:");
+        lcd.print(temperature, 1);
+        lcd.print("C H:");
+        lcd.print(humidity, 0);
+        lcd.print("%");
 
-String drinkSuggestion(float feelsLike) {
-  if (feelsLike >= 40) return "WATER+ORS";
-  if (feelsLike >= 32) return "COLD WATER";
-  if (feelsLike >= 25) return "JUICE";
-  return "WARM TEA";
-}
+        lcd.setCursor(0, 1);
+        lcd.print("P:");
+        lcd.print(pressure, 0);
+        lcd.print(" hPa");
+    } else if (lcdPage == 1) {
+        lcd.setCursor(0, 0);
+        lcd.print("Light:");
+        lcd.print(lightPercent);
+        lcd.print("%");
 
-String lightEvaluation(int percent) {
-  if (percent < 30) return "DARK";
-  if (percent < 60) return "DIM";
-  return "BRIGHT";
+        lcd.setCursor(0, 1);
+        lcd.print("Rain:");
+        lcd.print(rainStatus == LOW ? "YES" : "NO");
+    } else if (lcdPage == 2) {
+        lcd.setCursor(0, 0);
+        if (WiFi.status() == WL_CONNECTED) {
+            lcd.print("Server: ");
+            lcd.print(dataPostedSuccessfully ? "OK" : "ERR");
+        } else {
+            lcd.print("WiFi: OFFLINE");
+        }
+
+        lcd.setCursor(0, 1);
+        lcd.print("weathermonitor");
+    }
+
+    lcdPage++;
+    if (lcdPage > 2)
+        lcdPage = 0;
 }
 
 // ================= SETUP =================
-void setup() {
-  Serial.begin(115200);
+void setup()
+{
+    Serial.begin(115200);
 
-  // ===== ESP32 ADC FIX =====
-  analogReadResolution(12);                 // 0–4095
-  analogSetPinAttenuation(LDR_PIN, ADC_11db); // Full 0–3.3V range
+    // ESP32 ADC Configuration
+    analogReadResolution(12);
+    analogSetPinAttenuation(LDR_PIN, ADC_11db);
 
-  lcd.init();
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("System Loading");
-  delay(2000);
-  lcd.clear();
+    // LCD Initialization
+    lcd.init();
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("Weather Station");
+    lcd.setCursor(0, 1);
+    lcd.print("Starting...");
+    delay(1500);
+    lcd.clear();
 
-  if (!bmp.begin(0x76)) {
-    lcd.print("BMP280 Error");
-    while (1);
-  }
+    // BMP280 Initialization
+    if (!bmp.begin(0x76)) {
+        lcd.print("BMP280 Error!");
+        Serial.println("BMP280 initialization failed!");
+        while (1)
+            delay(10);
+    }
 
-  dht.begin();
-  pinMode(RAIN_PIN, INPUT);
+    // DHT11 Initialization
+    dht.begin();
+    pinMode(RAIN_PIN, INPUT);
 
-  WiFi.begin(ssid, password);
-  lcd.print("WiFi Connecting");
+    Serial.println("\n=== ESP32 Weather Station ===");
+    Serial.printf("Server: %s\n", serverDomain);
 
-  int retry = 0;
-  while (WiFi.status() != WL_CONNECTED && retry < 20) {
-    delay(500);
-    retry++;
-  }
+    // WiFi Connection
+    lcd.setCursor(0, 0);
+    lcd.print("Connecting WiFi");
+    Serial.print("Connecting to WiFi");
 
-  lcd.clear();
-  if (WiFi.status() == WL_CONNECTED) {
-    lcd.print("WiFi Connected");
-    server.begin();
-  } else {
-    lcd.print("Offline Mode");
-  }
+    WiFi.begin(ssid, password);
 
-  delay(2000);
-  lcd.clear();
+    int retry = 0;
+    while (WiFi.status() != WL_CONNECTED && retry < 30) {
+        delay(500);
+        Serial.print(".");
+        lcd.setCursor(retry % 16, 1);
+        lcd.print(".");
+        retry++;
+    }
+
+    lcd.clear();
+
+    if (WiFi.status() == WL_CONNECTED) {
+        lcd.setCursor(0, 0);
+        lcd.print("WiFi Connected!");
+        lcd.setCursor(0, 1);
+        lcd.print(WiFi.localIP());
+
+        Serial.println("\nWiFi Connected!");
+        Serial.print("IP Address: ");
+        Serial.println(WiFi.localIP());
+        Serial.printf("Server: %s\n", serverDomain);
+    } else {
+        lcd.setCursor(0, 0);
+        lcd.print("WiFi Failed!");
+        lcd.setCursor(0, 1);
+        lcd.print("Offline Mode");
+        Serial.println("\nWiFi connection failed - Running offline");
+    }
+
+    delay(3000);
+    lcd.clear();
+
+    // Initial sensor reading
+    readSensors();
 }
 
 // ================= LOOP =================
-void loop() {
-  if (millis() - lastTime > timerDelay) {
-    readSensors();
-    updateLCD();
-    lastTime = millis();
-  }
+void loop()
+{
+    // Read sensors at regular intervals
+    if (millis() - lastSensorRead >= sensorInterval) {
+        readSensors();
+        updateLCD();
+        lastSensorRead = millis();
+    }
 
-  WiFiClient client = server.available();
-  if (client) {
-    String html = SendHTML();
-    client.println("HTTP/1.1 200 OK");
-    client.println("Content-type:text/html\n");
-    client.println(html);
-    client.stop();
-  }
-}
+    // Post data to server at regular intervals
+    if (millis() - lastServerPost >= serverInterval) {
+        if (WiFi.status() == WL_CONNECTED) {
+            dataPostedSuccessfully = postDataToServer();
 
-// ================= SENSOR READ =================
-void readSensors() {
-  temperature = bmp.readTemperature();
-  pressure = bmp.readPressure() / 100.0F;
-  altitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
-
-  humidity = dht.readHumidity();
-  if (isnan(humidity)) humidity = 0;
-
-  rainStatus = digitalRead(RAIN_PIN);
-
-  // ===== LDR ANALOG READ (FIXED) =====
-  ldrValue = analogRead(LDR_PIN);                 // 0–4095
-  lightPercent = 100 - (ldrValue * 100) / 4095;         // Better than map()
-  lightStatus = lightEvaluation(lightPercent);
-
-  feelsLike = calculateFeelsLike(temperature, humidity);
-  dewPoint = calculateDewPoint(temperature, humidity);
-  heatStatus = heatAlarm(feelsLike);
-  weatherStatus = weatherEvaluation(temperature, rainStatus);
-  drinkTip = drinkSuggestion(feelsLike);
-  humidifierState = humidityON(humidity);
-
-  // Debug
-  Serial.print("LDR: ");
-  Serial.print(ldrValue);
-  Serial.print(" | Light: ");
-  Serial.print(lightPercent);
-  Serial.println("%");
-}
-
-// ================= LCD DISPLAY =================
-void updateLCD() {
-  lcd.clear();
-
-  if (lcdPage == 0) {
-    lcd.setCursor(0, 0);
-    lcd.print("T:");
-    lcd.print(temperature, 1);
-    lcd.print(" H:");
-    lcd.print(humidity, 0);
-
-    lcd.setCursor(0, 1);
-    lcd.print("Feels:");
-    lcd.print(feelsLike, 1);
-  }
-  else if (lcdPage == 1) {
-    lcd.setCursor(0, 0);
-    lcd.print("Heat:");
-    lcd.print(heatStatus);
-
-    lcd.setCursor(0, 1);
-    lcd.print("Dew:");
-    lcd.print(dewPoint, 1);
-  }
-  else if (lcdPage == 2) {
-    lcd.setCursor(0, 0);
-    lcd.print("Weather:");
-    lcd.print(weatherStatus);
-
-    lcd.setCursor(0, 1);
-    lcd.print("Rain:");
-    lcd.print(rainStatus == LOW ? "YES" : "NO");
-  }
-  else if (lcdPage == 3) {
-    lcd.setCursor(0, 0);
-    lcd.print("Humid:");
-    lcd.print(humidifierState ? "ON" : "OFF");
-
-    lcd.setCursor(0, 1);
-    lcd.print("Drink:");
-    lcd.print(drinkTip);
-  }
-  else if (lcdPage == 4) {
-    lcd.setCursor(0, 0);
-    lcd.print("Light:");
-    lcd.print(lightStatus);
-
-    lcd.setCursor(0, 1);
-    lcd.print(lightPercent);
-    lcd.print("%");
-  }
-
-  lcdPage++;
-  if (lcdPage > 4) lcdPage = 0;
-}
-
-// ================= WEB PAGE =================
-String SendHTML() {
-  String ptr = "<html><head><meta http-equiv='refresh' content='5'></head><body>";
-  ptr += "<h2>ESP32 Weather Station</h2>";
-  ptr += "Temperature: " + String(temperature) + " C<br>";
-  ptr += "Humidity: " + String(humidity) + " %<br>";
-  ptr += "Feels Like: " + String(feelsLike) + " C<br>";
-  ptr += "Heat Alarm: " + heatStatus + "<br>";
-  ptr += "Dew Point: " + String(dewPoint) + " C<br>";
-  ptr += "Weather: " + weatherStatus + "<br>";
-  ptr += "Rain: " + String(rainStatus == LOW ? "YES" : "NO") + "<br>";
-  ptr += "Light Level: " + String(lightPercent) + " %<br>";
-  ptr += "Light Status: " + lightStatus + "<br>";
-  ptr += "Drink Suggestion: " + drinkTip + "<br>";
-  ptr += "</body></html>";
-  return ptr;
+            // Optionally fetch latest data from server
+            // fetchDataFromServer();
+        } else {
+            Serial.println("WiFi disconnected. Attempting reconnection...");
+            WiFi.reconnect();
+        }
+        lastServerPost = millis();
+    }
 }
